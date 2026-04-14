@@ -137,7 +137,7 @@ def _read_hardware_emissions() -> Dict[str, Any]:
             "rf_matrix": rf_matrix.tolist(),
         }
     except Exception as exc:
-        return {"source": "hardware", "error": str(exc)}
+        return {"source": "hardware", "error": "Hardware read failed."}
 
 
 def _read_virtual_emissions() -> Dict[str, Any]:
@@ -236,8 +236,8 @@ def get_ammonia():
     suite = _ammonia_gas if mode == "gas" else _ammonia_ion
     try:
         results = suite.full_reading(ppm)
-    except Exception as exc:
-        results = {"error": str(exc)}
+    except Exception:
+        results = {"error": "Sensor reading failed."}
 
     # Also build the Gemma-ready text report
     gemma_prompt = synthesize_data_for_gemma(
