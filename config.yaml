@@ -1,0 +1,87 @@
+# Visual Camera Analyzer - Configuration
+
+camera:
+  # Camera device index (0 for default webcam)
+  device_index: 0
+  # Frame resolution
+  width: 1280
+  height: 720
+  # Frames per second
+  fps: 30
+
+uv_detection:
+  # UV flashlight wavelength range (nm) - 365nm to 395nm is optimal
+  wavelength_min_nm: 365
+  wavelength_max_nm: 395
+  # Fluorescence color range in HSV for yellow-green urine spots
+  # Hue range: yellow-green (40-80 in OpenCV 0-179 scale)
+  hue_min: 20
+  hue_max: 80
+  saturation_min: 40
+  saturation_max: 255
+  value_min: 80
+  value_max: 255
+  # Minimum contour area (pixels) to consider a valid detection
+  min_contour_area: 100
+  # Gaussian blur kernel size for noise reduction
+  blur_kernel_size: 5
+
+classifier:
+  # Path to the trained TensorFlow model
+  model_path: "models/urine_detector_model"
+  # Input image size for the classifier
+  input_size: 224
+  # Confidence threshold for positive detection
+  confidence_threshold: 0.7
+  # Number of classes: [no_urine, urine, other_fluorescent]
+  num_classes: 3
+  class_names:
+    - "no_urine"
+    - "urine"
+    - "other_fluorescent"
+
+spectrometer:
+  # Spectral analysis wavelength range
+  wavelength_min: 300
+  wavelength_max: 700
+  # Number of spectral bins
+  num_bins: 100
+  # Known urine fluorescence peak (nm) under UV
+  urine_peak_nm: 450
+  # Tolerance for peak matching (nm)
+  peak_tolerance_nm: 30
+
+logging:
+  # Directory to save detection logs
+  log_dir: "logs"
+  # Log file name format (supports strftime codes)
+  log_file_format: "detections_%Y%m%d_%H%M%S.json"
+  # Directory to save detection images
+  image_dir: "logs/images"
+  # Maximum number of log entries before rotation
+  max_log_entries: 10000
+
+alerts:
+  # Enable/disable email alerts
+  email_enabled: false
+  smtp_host: "smtp.example.com"
+  smtp_port: 587
+  smtp_user: ""
+  smtp_password: ""
+  recipient_email: ""
+  # Enable/disable webhook alerts (e.g. for smart home integrations)
+  webhook_enabled: false
+  webhook_url: ""
+  # Minimum detections before sending an alert
+  alert_threshold: 1
+  # Cooldown between alerts (seconds)
+  alert_cooldown_seconds: 300
+
+limitations:
+  # UV detection only works on dried urine, not fresh puddles
+  dry_urine_only: true
+  # Other materials that may cause false positives under UV:
+  # - Cleaning products
+  # - Laundry detergents
+  # - Certain fabrics
+  false_positive_note: "Other fluorescent materials (detergents, fabric brighteners) may trigger alerts"

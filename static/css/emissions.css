@@ -1,0 +1,410 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   emissions.css — REE Digital Twin Element Card Animations
+   ═══════════════════════════════════════════════════════════════════════════
+   CSS custom properties (set per-card from JS mapElementSignature):
+     --element-color   HSL colour matching the element's excitation state
+     --rf-color        Secondary accent from the element's spectral line
+     --glitch-deg      Skew/jitter magnitude in degrees
+
+   Class reference
+   ───────────────
+   .element-card          Base card (always present)
+   .excited               High thermal state — glow + pulse border
+   .peak-emission         Critical state (>90% thermal) — white burst
+   .radiation-jitter      Hardware energy glitch — skew animation
+   .rf-overlay            RF scan-line inside card
+   .dashboard             Full-page grid container
+   .status-bar            Live connection status indicator
+   .waveform-container    SVG waveform wrapper
+   .stat                  Label + value row inside card
+   .element-symbol        Periodic-table symbol glyph
+   .detection-badge       Floating state label
+   .camera-overlay        Canvas blended over the live video feed
+   .scanline-global       Full-viewport scanline for hardware-UI look
+   .fusion-panel          Sensor-fusion result panel
+   .ogi-plume             Optical Gas Imaging plume overlay
+   .schlieren-overlay     Schlieren density-ripple overlay
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── CSS variables ──────────────────────────────────────────────────────── */
+:root {
+  --bg-dark:        #0a0a0f;
+  --bg-card:        #111118;
+  --bg-card-hover:  #16161f;
+  --text-primary:   #e8e8f0;
+  --text-secondary: #8888a8;
+  --border-dim:     rgba(255,255,255,0.08);
+  --border-bright:  rgba(255,255,255,0.35);
+  --transition-std: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  --font-mono:      "JetBrains Mono","Fira Code","Courier New",monospace;
+  --font-ui:        "Inter","Segoe UI",system-ui,sans-serif;
+}
+
+/* ─── Dashboard ──────────────────────────────────────────────────────────── */
+.dashboard {
+  display:         flex;
+  flex-direction:  column;
+  min-height:      100vh;
+  background:      var(--bg-dark);
+  color:           var(--text-primary);
+  font-family:     var(--font-ui);
+  padding:         1.5rem;
+  box-sizing:      border-box;
+}
+
+.dashboard header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  margin-bottom:   1.5rem;
+  border-bottom:   1px solid var(--border-dim);
+  padding-bottom:  1rem;
+}
+
+.dashboard h1 {
+  font-family:     var(--font-mono);
+  font-size:       1.25rem;
+  letter-spacing:  0.15em;
+  color:           var(--text-primary);
+  margin:          0;
+  text-transform:  uppercase;
+}
+
+.element-grid {
+  display:                grid;
+  grid-template-columns:  repeat(auto-fill, minmax(200px,1fr));
+  gap:                    1rem;
+}
+
+/* ─── Status bar ─────────────────────────────────────────────────────────── */
+.status-bar {
+  font-family:    var(--font-mono);
+  font-size:      0.7rem;
+  letter-spacing: 0.1em;
+  color:          #44ff88;
+  background:     rgba(68,255,136,0.08);
+  border:         1px solid rgba(68,255,136,0.25);
+  padding:        0.25rem 0.75rem;
+  border-radius:  4px;
+  animation:      blink-status 2s step-end infinite;
+}
+.status-bar.disconnected {
+  color:          #ff4466;
+  background:     rgba(255,68,102,0.08);
+  border-color:   rgba(255,68,102,0.25);
+  animation:      none;
+}
+
+@keyframes blink-status {
+  0%,100% { opacity:1; }
+  50%     { opacity:0.5; }
+}
+
+/* ─── 1. Base Element Card ───────────────────────────────────────────────── */
+.element-card {
+  position:        relative;
+  display:         flex;
+  flex-direction:  column;
+  gap:             0.5rem;
+  padding:         1rem;
+  background:      var(--bg-card);
+  border:          1px solid var(--border-dim);
+  border-radius:   8px;
+  overflow:        hidden;
+  transition:      var(--transition-std);
+  --element-color: hsl(220,80%,55%);
+  --rf-color:      hsl(180,90%,65%);
+  --glitch-deg:    0deg;
+}
+.element-card:hover {
+  background:      var(--bg-card-hover);
+  border-color:    var(--border-bright);
+  transform:       translateY(-2px);
+  box-shadow:      0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* ─── Element symbol & text ──────────────────────────────────────────────── */
+.element-symbol {
+  font-family:  var(--font-mono);
+  font-size:    2rem;
+  font-weight:  700;
+  color:        var(--element-color);
+  line-height:  1;
+  text-shadow:  0 0 12px var(--element-color);
+  transition:   color 0.4s ease, text-shadow 0.4s ease;
+}
+.element-card h2 {
+  font-family:    var(--font-mono);
+  font-size:      0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color:          var(--text-secondary);
+  margin:         0;
+}
+.stat {
+  font-family:  var(--font-mono);
+  font-size:    0.7rem;
+  color:        var(--text-secondary);
+  display:      flex;
+  justify-content: space-between;
+}
+.stat .value {
+  color:       var(--element-color);
+  font-weight: 600;
+  transition:  color 0.3s ease;
+}
+
+/* ─── 2. RF Scan-line Overlay ────────────────────────────────────────────── */
+.rf-overlay {
+  position:       absolute;
+  inset:          0;
+  pointer-events: none;
+  background:     repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(255,255,255,0.025) 3px,
+                    transparent 4px
+                  );
+  animation:      rf-scan 4s linear infinite;
+  opacity:        0.6;
+}
+@keyframes rf-scan {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100px; }
+}
+
+/* ─── 3. Excited state ───────────────────────────────────────────────────── */
+.excited {
+  border-color: var(--element-color);
+  box-shadow:   0 0 12px 2px var(--element-color),
+                inset 0 0 8px rgba(0,0,0,0.6);
+  animation:    pulse-border 1.5s ease-in-out infinite;
+}
+.excited .rf-overlay {
+  opacity:           1;
+  animation-duration: 1.5s;
+}
+@keyframes pulse-border {
+  0%   { filter: brightness(1);   transform: scale(1); }
+  50%  { filter: brightness(1.6); transform: scale(1.015); }
+  100% { filter: brightness(1);   transform: scale(1); }
+}
+
+/* ─── 4. Peak emission — white burst ─────────────────────────────────────── */
+.peak-emission {
+  border-color: #ffffff;
+  box-shadow:   0 0 30px 8px #ffffff,
+                0 0 60px 15px var(--element-color),
+                inset 0 0 20px rgba(255,255,255,0.1);
+  animation:    peak-burst 0.8s ease-in-out infinite alternate;
+}
+@keyframes peak-burst {
+  from {
+    box-shadow:  0 0 20px 4px #ffffff, 0 0 40px 10px var(--element-color);
+    filter:      brightness(1.2);
+  }
+  to {
+    box-shadow:  0 0 40px 12px #ffffff, 0 0 80px 25px var(--element-color);
+    filter:      brightness(2.0);
+  }
+}
+
+/* ─── 5. Radiation / Glitch ──────────────────────────────────────────────── */
+.radiation-jitter {
+  animation: jitter 0.12s steps(1) infinite,
+             pulse-border 1.5s ease-in-out infinite;
+}
+@keyframes jitter {
+  0%   { transform: translate(0,0)    skewX(var(--glitch-deg)); }
+  20%  { transform: translate(-1px,1px) skewX(calc(var(--glitch-deg)*-1)); }
+  40%  { transform: translate(1px,-1px) skewX(var(--glitch-deg)); }
+  60%  { transform: translate(-1px,-1px) skewX(0deg); }
+  80%  { transform: translate(1px,1px) skewX(calc(var(--glitch-deg)*0.5)); }
+  100% { transform: translate(0,0)    skewX(var(--glitch-deg)); }
+}
+
+/* ─── 6. Waveform container ──────────────────────────────────────────────── */
+.waveform-container {
+  width:        100%;
+  height:       32px;
+  overflow:     hidden;
+  border-radius: 4px;
+  background:   rgba(0,0,0,0.3);
+}
+.waveform-container svg { width:100%; height:100%; overflow:visible; }
+.waveform-container svg path {
+  stroke:      var(--rf-color);
+  stroke-width: 1.2;
+  fill:        none;
+  filter:      drop-shadow(0 0 3px var(--rf-color));
+}
+
+/* ─── 7. Detection badge ─────────────────────────────────────────────────── */
+.detection-badge {
+  position:       absolute;
+  top:            0.5rem;
+  right:          0.5rem;
+  font-family:    var(--font-mono);
+  font-size:      0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding:        2px 6px;
+  border-radius:  3px;
+  background:     var(--element-color);
+  color:          #000;
+  font-weight:    700;
+  opacity:        0;
+  transition:     opacity 0.3s ease;
+  pointer-events: none;
+}
+.excited .detection-badge,
+.peak-emission .detection-badge { opacity: 1; }
+
+/* ─── 8. Camera overlay — screen blending on video feed ─────────────────── */
+.camera-overlay {
+  position:       absolute;
+  inset:          0;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  opacity:        0.5;
+  transition:     opacity 0.4s ease;
+}
+.camera-overlay.active {
+  opacity:   0.75;
+  animation: overlay-pulse 2s ease-in-out infinite alternate;
+}
+@keyframes overlay-pulse {
+  from { opacity: 0.5; }
+  to   { opacity: 0.8; }
+}
+
+/* ─── 9. Global scanline ─────────────────────────────────────────────────── */
+.scanline-global {
+  position:       fixed;
+  inset:          0;
+  pointer-events: none;
+  z-index:        9999;
+  background:     repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 1px,
+                    rgba(0,0,0,0.04) 2px,
+                    transparent 2px
+                  );
+}
+
+/* ─── 10. Optical Gas Imaging (OGI) plume overlay ────────────────────────── */
+/* Simulates a visible "smoke" plume for detected chemical vapour clouds.
+   Hue is set dynamically from JS based on the chemical (e.g. methane ≈ orange) */
+.ogi-plume {
+  position:       absolute;
+  inset:          0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background:     radial-gradient(
+                    ellipse 60% 80% at 50% 60%,
+                    var(--ogi-color, rgba(255,140,0,0.18)),
+                    transparent 70%
+                  );
+  filter:         blur(18px);
+  opacity:        0;
+  transition:     opacity 0.6s ease;
+  animation:      plume-drift 6s ease-in-out infinite;
+}
+.ogi-plume.active { opacity: 1; }
+
+@keyframes plume-drift {
+  0%,100% { transform: translateY(0)   scaleX(1);    }
+  33%     { transform: translateY(-6px) scaleX(1.05); }
+  66%     { transform: translateY(4px)  scaleX(0.97); }
+}
+
+/* ─── 11. Schlieren density-ripple overlay ───────────────────────────────── */
+/* Simulates refractive-index ripples caused by chemical concentration
+   gradients — the "shadows" of invisible gas density changes. */
+.schlieren-overlay {
+  position:       absolute;
+  inset:          0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity:        0;
+  background:     repeating-linear-gradient(
+                    45deg,
+                    transparent 0px,
+                    rgba(255,255,255,0.03) 1px,
+                    transparent 2px,
+                    transparent 6px
+                  );
+  animation:      schlieren-ripple 2s linear infinite;
+  transition:     opacity 0.4s ease;
+}
+.schlieren-overlay.active { opacity: 0.6; }
+
+@keyframes schlieren-ripple {
+  0%   { background-position: 0 0;    filter: blur(0.5px); }
+  50%  { background-position: 6px 6px; filter: blur(1px); }
+  100% { background-position: 12px 0;  filter: blur(0.5px); }
+}
+
+/* ─── 12. Fusion result panel ────────────────────────────────────────────── */
+.fusion-panel {
+  background:   #0d0d14;
+  border:       1px solid var(--border-dim);
+  border-radius: 8px;
+  padding:      1rem;
+  margin-top:   1.5rem;
+  font-family:  var(--font-mono);
+  font-size:    0.72rem;
+  line-height:  1.6;
+}
+.fusion-panel .compound  { font-size:1rem; font-weight:700; color:var(--text-primary); }
+.fusion-panel .hazard-none     { color:#44ff88; }
+.fusion-panel .hazard-low      { color:#ffee44; }
+.fusion-panel .hazard-medium   { color:#ff9944; }
+.fusion-panel .hazard-high     { color:#ff5533; }
+.fusion-panel .hazard-critical { color:#ff2244; animation:blink-status 0.5s step-end infinite; }
+
+/* ─── 13. Point cloud canvas ─────────────────────────────────────────────── */
+.point-cloud-canvas {
+  width:         100%;
+  height:        220px;
+  background:    #000;
+  border-radius: 8px;
+  display:       block;
+}
+
+/* ─── 14. Scan button ────────────────────────────────────────────────────── */
+.scan-btn {
+  display:        inline-flex;
+  align-items:    center;
+  gap:            0.5rem;
+  padding:        0.5rem 1.25rem;
+  background:     transparent;
+  border:         1px solid #44ff88;
+  color:          #44ff88;
+  font-family:    var(--font-mono);
+  font-size:      0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor:         pointer;
+  border-radius:  4px;
+  transition:     var(--transition-std);
+}
+.scan-btn:hover {
+  background:   rgba(68,255,136,0.12);
+  box-shadow:   0 0 10px rgba(68,255,136,0.4);
+}
+.scan-btn.active {
+  background:      rgba(68,255,136,0.2);
+  --element-color: #44ff88;
+  animation:       pulse-border 1s ease-in-out infinite;
+}
+
+/* ─── 15. Responsive ─────────────────────────────────────────────────────── */
+@media (max-width:600px) {
+  .element-grid { grid-template-columns: repeat(2,1fr); gap:0.75rem; }
+  .dashboard    { padding:0.75rem; }
+  .dashboard h1 { font-size:0.9rem; }
+  .element-symbol { font-size:1.5rem; }
+}
