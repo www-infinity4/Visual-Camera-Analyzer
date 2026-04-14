@@ -75,7 +75,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from analyzer.chemical_signatures import SignatureLibrary, spectral_angle_mapper
+from analyzer.chemical_signatures import SpectralLibraryMatcher, spectral_angle_mapper
 
 
 # ---------------------------------------------------------------------------
@@ -278,8 +278,8 @@ class LocalSAMFusion:
     available scalar sensor readings (PID, Raman, IMS, LWIR, gas).
     """
 
-    def __init__(self, library: Optional[SignatureLibrary] = None) -> None:
-        self.library = library or SignatureLibrary()
+    def __init__(self, library: Optional[SpectralLibraryMatcher] = None) -> None:
+        self.library = library or SpectralLibraryMatcher()
 
     def _sam_best_match(
         self, observed: np.ndarray
@@ -288,7 +288,9 @@ class LocalSAMFusion:
         best_name = "unknown"
         best_sim = -1.0
 
-        for chem in self.library.chemicals.values():
+        # SpectralLibraryMatcher stores chemicals in .library dict
+        chemicals = getattr(self.library, 'library', {})
+        for chem in chemicals.values():
             if not chem.uv_vis_peaks:
                 continue
             # Build a reference vector at the same resolution as observed

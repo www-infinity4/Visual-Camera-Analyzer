@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REE Digital Twin — Chemical Vision Analyzer</title>
+  <link rel="stylesheet" href="/static/css/emissions.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg-dark, #0a0a0f); color: #e8e8f0; font-family: "Inter", system-ui, sans-serif; }
+
+    /* ── Camera section ─── */
+    .camera-section {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 900px) { .camera-section { grid-template-columns: 1fr; } }
+
+    .camera-wrap {
+      position: relative;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      aspect-ratio: 16/9;
+    }
+    #cameraVideo, #cameraCanvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    #cameraCanvas { pointer-events: none; }
+
+    /* calibration banner */
+    #calibBanner {
+      display: none;
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: rgba(255,180,0,0.88);
+      color: #000; font-size: 0.78rem; font-family: monospace;
+      text-align: center; padding: 0.4rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
+    /* ── Side panel ─── */
+    .side-panel { display: flex; flex-direction: column; gap: 0.75rem; }
+    .panel-box {
+      background: #111118;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 0.9rem;
+    }
+    .panel-box h3 {
+      font-family: monospace; font-size: 0.72rem;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: #8888a8; margin-bottom: 0.6rem;
+    }
+    .panel-box p, .panel-box .val {
+      font-family: monospace; font-size: 0.82rem; line-height: 1.5;
+    }
+    .val-row { display: flex; justify-content: space-between; }
+    .val-row .key { color: #8888a8; }
+    .val-row .val { color: #e8e8f0; font-weight: 600; }
+
+    /* hazard colours */
+    .hz-none     { color: #44ff88; }
+    .hz-low      { color: #ffee44; }
+    .hz-medium   { color: #ff9944; }
+    .hz-high     { color: #ff5533; }
+    .hz-critical { color: #ff2244; animation: blink-status 0.5s step-end infinite; }
+
+    /* ── Controls ─── */
+    .controls { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.25rem; align-items: center; }
+    .btn {
+      font-family: monospace; font-size: 0.72rem; letter-spacing: 0.09em;
+      text-transform: uppercase; padding: 0.4rem 1rem;
+      border-radius: 4px; cursor: pointer; border: 1px solid;
+      transition: all 0.2s ease;
+    }
+    .btn-green  { border-color: #44ff88; color: #44ff88; background: transparent; }
+    .btn-green:hover  { background: rgba(68,255,136,0.12); }
+    .btn-blue   { border-color: #44aaff; color: #44aaff; background: transparent; }
+    .btn-blue:hover   { background: rgba(68,170,255,0.12); }
+    .btn-orange { border-color: #ff9944; color: #ff9944; background: transparent; }
+    .btn-orange:hover { background: rgba(255,153,68,0.12); }
+
+    select.ctrl-select {
+      background: #111; border: 1px solid rgba(255,255,255,0.15);
+      color: #e8e8f0; font-family: monospace; font-size: 0.72rem;
+      padding: 0.4rem 0.6rem; border-radius: 4px;
+    }
+
+    /* ── Search / filter bar ─── */
+    #searchBar {
+      background: #111; border: 1px solid rgba(255,255,255,0.12);
+      color: #e8e8f0; font-family: monospace; font-size: 0.78rem;
+      padding: 0.4rem 0.8rem; border-radius: 4px; width: 220px;
+    }
+    #searchBar:focus { outline: none; border-color: #44aaff; }
+
+    /* ── REE grid ─── */
+    #elementGrid { margin-top: 0.5rem; }
+
+    /* ── Point-cloud canvas ─── */
+    #pointCloud {
+      width: 100%; height: 200px;
+      background: #000; border-radius: 8px;
+      display: block; margin-top: 1.5rem;
+    }
+    @keyframes blink-status {
+      0%,100% { opacity:1; } 50% { opacity:0.3; }
+    }
+  </style>
+</head>
+<body>
+<div class="scanline-global"></div>
+
+<div class="dashboard">
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header>
+    <h1>⚗ REE Digital Twin · Chemical Vision Analyzer</h1>
+    <span id="statusBar" class="status-bar">● CONNECTING…</span>
+  </header>
+
+  <!-- ── Camera + side-panel ──────────────────────────────────────── -->
+  <div class="camera-section">
+    <div class="camera-wrap">
+      <video id="cameraVideo" autoplay muted playsinline></video>
+      <canvas id="cameraCanvas"></canvas>
+      <div id="calibBanner">▶ CALIBRATING — hold camera on blank surface…</div>
+    </div>
+
+    <div class="side-panel">
+      <!-- Fusion result -->
+      <div class="panel-box" id="fusionBox">
+        <h3>⚗ Fusion Result</h3>
+        <div class="val-row"><span class="key">COMPOUND</span><span class="val" id="fCompound">—</span></div>
+        <div class="val-row"><span class="key">CONFIDENCE</span><span class="val" id="fConf">—</span></div>
+        <div class="val-row"><span class="key">HAZARD</span><span class="val hz-none" id="fHazard">—</span></div>
+        <div class="val-row"><span class="key">BACKEND</span><span class="val" id="fBackend">—</span></div>
+        <p id="fReasoning" style="margin-top:0.5rem;color:#8888a8;font-size:0.68rem;line-height:1.5;"></p>
+      </div>
+
+      <!-- Ammonia suite -->
+      <div class="panel-box" id="ammoniaBox">
+        <h3>NH₃ / NH₄NO₃ Suite</h3>
+        <div class="val-row"><span class="key">MODE</span>
+          <select id="ammoniaMode" class="ctrl-select" style="font-size:0.7rem;padding:0.1rem 0.3rem;">
+            <option value="gas">Gas (NH₃)</option>
+            <option value="ion">Ion (NH₄NO₃)</option>
+          </select>
+        </div>
+        <div id="ammoniaReadings" style="margin-top:0.4rem;font-family:monospace;font-size:0.72rem;color:#8888a8;">—</div>
+      </div>
+
+      <!-- UV camera scan -->
+      <div class="panel-box">
+        <h3>UV Camera Scan</h3>
+        <div class="val-row"><span class="key">SCANS</span><span class="val" id="scanCount">0</span></div>
+        <div class="val-row"><span class="key">DETECTIONS</span><span class="val" id="scanDetections">0</span></div>
+        <div id="scanDetail" style="font-family:monospace;font-size:0.68rem;color:#8888a8;margin-top:0.4rem;max-height:80px;overflow-y:auto;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Controls ─────────────────────────────────────────────────── -->
+  <div class="controls">
+    <button class="btn btn-green" id="btnScan"         onclick="triggerScan()">▶ UV Scan</button>
+    <button class="btn btn-blue"  id="btnCamera"       onclick="toggleCamera()">⬤ Camera</button>
+    <button class="btn btn-blue"  id="btnOGI"          onclick="toggleOGI()">OGI Filter</button>
+    <button class="btn btn-blue"  id="btnSchlieren"    onclick="toggleSchlieren()">Schlieren</button>
+    <button class="btn btn-orange" id="btnCalibrate"   onclick="startCalibration()">Calibrate</button>
+    <input  id="searchBar" type="text" placeholder="Filter elements…" oninput="filterElements(this.value)" />
+    <select class="ctrl-select" id="fusionTarget" onchange="runFusion()">
+      <option value="Ammonia">Ammonia</option>
+      <option value="Ammonium Nitrate">Ammonium Nitrate</option>
+      <option value="Methane">Methane</option>
+      <option value="Neodymium">Neodymium</option>
+      <option value="Cerium">Cerium</option>
+      <option value="Lanthanum">Lanthanum</option>
+    </select>
+    <button class="btn btn-green" onclick="runFusion()">⚗ Fuse</button>
+  </div>
+
+  <!-- ── REE element grid ─────────────────────────────────────────── -->
+  <div class="element-grid" id="elementGrid">
+    <!-- Cards injected by JS -->
+    <div style="font-family:monospace;font-size:0.8rem;color:#8888a8;padding:2rem;">
+      Loading Digital Twins…
+    </div>
+  </div>
+
+  <!-- ── 3D Point cloud ───────────────────────────────────────────── -->
+  <canvas id="pointCloud" title="REE Emission Point Cloud"></canvas>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     JavaScript — Single-file implementation (no bundler required).
+     The Vite/React frontend in /frontend/ mirrors this logic with
+     hooks and components. This version works standalone from Flask.
+     ════════════════════════════════════════════════════════════════ -->
+<script>
+/* ─── State ───────────────────────────────────────────────────────── */
+const API   = '';                 // same origin — element_server.py
+let elements     = {};
+let ogiActive    = false;
+let schlierenActive = false;
+let cameraStream = null;
+let calibrating  = false;
+let calibFrames  = 0;
+let glCtx        = null;
+let glPrograms   = {};
+let referenceFrameData = null;
+let sseSource    = null;
+let pointCloudAnim = null;
+
+/* ─── SSE stream ──────────────────────────────────────────────────── */
+function connectSSE() {
+  if (sseSource) sseSource.close();
+  sseSource = new EventSource(`${API}/stream/elements`);
+  sseSource.onmessage = (e) => {
+    const payload = JSON.parse(e.data);
+    elements = payload.elements || {};
+    renderGrid(elements);
+    drawPointCloud(elements);
+    document.getElementById('statusBar').textContent = '● LIVE';
+    document.getElementById('statusBar').className = 'status-bar';
+  };
+  sseSource.onerror = () => {
+    document.getElementById('statusBar').textContent = '● DISCONNECTED';
+    document.getElementById('statusBar').className = 'status-bar disconnected';
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+/* ─── Element grid rendering ──────────────────────────────────────── */
+function mapSignature(thermal, flux, spectralNm) {
+  const t = Math.min(Math.max((thermal - 30000) / 40000, 0), 1);
+  const hue = Math.round((1 - t) * 240);
+  const hex = `hsl(${hue}, ${Math.round(70 + t * 20)}%, ${Math.round(55 - t * 10)}%)`;
+  const specHue = Math.round(270 - ((spectralNm - 380) / 320) * 270);
+  const rfColor = `hsl(${specHue}, 90%, 65%)`;
+  const amplitude = Math.min(Math.abs(flux) / 1_000_000, 1);
+  const isExcited = t > 0.7;
+  const isPeak    = t > 0.9;
+  const badge     = isPeak ? 'PEAK' : isExcited ? 'EXCITED' : 'STABLE';
+  const glitchDeg = isExcited ? (t * 10).toFixed(1) : '0';
+  return { hex, rfColor, amplitude, isExcited, isPeak, badge, glitchDeg, t };
+}
+
+function buildWaveSVG(rfType, amplitude, t) {
+  const h = 10, mid = 10;
+  const pts = [];
+  for (let x = 0; x <= 100; x += 5) {
+    let y;
+    switch (rfType) {
+      case 'Pulsed':
+        y = mid + (x % 20 < 5 ? -amplitude * h : 0); break;
+      case 'Oscillatory':
+        y = mid - Math.sin(x / 5) * amplitude * h; break;
+      case 'Harmonic':
+        y = mid - (Math.sin(x / 5) + 0.4 * Math.sin(x / 2.5)) * amplitude * h * 0.7; break;
+      case 'Decay Pattern':
+        y = mid - Math.sin(x / 4) * amplitude * h * Math.exp(-x / 60); break;
+      case 'Wideband Noise':
+        y = mid + (Math.random() - 0.5) * amplitude * h * 2; break;
+      default: // Steady State
+        y = mid - t * amplitude * h;
+    }
+    pts.push(`${x},${y.toFixed(1)}`);
+  }
+  return `<polyline points="${pts.join(' ')}" fill="none" stroke="currentColor" stroke-width="1.2"/>`;
+}
+
+function renderGrid(data) {
+  const search = (document.getElementById('searchBar').value || '').toLowerCase();
+  const grid = document.getElementById('elementGrid');
+
+  // Build or update cards
+  for (const [name, el] of Object.entries(data)) {
+    const sig = mapSignature(el.excitation, el.flux, el.spectral_nm || 450);
+    let card = document.getElementById(`card-${name}`);
+
+    const classes = [
+      'element-card',
+      sig.isExcited ? 'excited' : '',
+      sig.isPeak    ? 'peak-emission' : '',
+      sig.isExcited ? 'radiation-jitter' : '',
+    ].filter(Boolean).join(' ');
+
+    const style = [
+      `--element-color:${sig.hex}`,
+      `--rf-color:${sig.rfColor}`,
+      `--glitch-deg:${sig.glitchDeg}deg`,
+    ].join(';');
+
+    const tempC   = (el.excitation / 1000).toFixed(1);
+    const fluxMA  = (el.flux / 1000).toFixed(1);
+    const waveSVG = buildWaveSVG(el.rf_signature, sig.amplitude, sig.t);
+
+    const html = `
+      <div class="rf-overlay"></div>
+      <div class="detection-badge">${sig.badge}</div>
+      <div class="element-symbol">${el.symbol || name.slice(0,2).toUpperCase()}</div>
+      <h2>${el.name || name}</h2>
+      <div class="stat">TEMP <span class="value">${tempC}°C</span></div>
+      <div class="stat">FLUX <span class="value">${fluxMA} mA</span></div>
+      <div class="stat">RF <span class="value">${el.rf_signature || '—'}</span></div>
+      <div class="stat">λ <span class="value">${(el.spectral_nm||0).toFixed(1)} nm</span></div>
+      <div class="waveform-container">
+        <svg viewBox="0 0 100 20" preserveAspectRatio="none" style="color:${sig.rfColor}">
+          ${waveSVG}
+        </svg>
+      </div>`;
+
+    if (card) {
+      card.className = classes;
+      card.style.cssText = style;
+      card.innerHTML = html;
+    } else {
+      card = document.createElement('div');
+      card.id = `card-${name}`;
+      card.className = classes;
+      card.style.cssText = style;
+      card.innerHTML = html;
+      grid.appendChild(card);
+    }
+
+    // Search filter
+    card.style.display = (search && !name.includes(search) && !(el.name||'').toLowerCase().includes(search))
+      ? 'none' : '';
+  }
+}
+
+function filterElements(q) {
+  const s = q.toLowerCase();
+  for (const [name, el] of Object.entries(elements)) {
+    const card = document.getElementById(`card-${name}`);
+    if (!card) continue;
+    card.style.display = (s && !name.includes(s) && !(el.name||'').toLowerCase().includes(s))
+      ? 'none' : '';
+  }
+}
+
+/* ─── Point cloud (Canvas 2D, 60 fps) ────────────────────────────── */
+let pcAngle = 0;
+function drawPointCloud(data) {
+  const canvas = document.getElementById('pointCloud');
+  const ctx = canvas.getContext('2d');
+  canvas.width  = canvas.offsetWidth  || 800;
+  canvas.height = canvas.offsetHeight || 200;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  pcAngle += 0.008;
+  const entries = Object.entries(data);
+  entries.forEach(([name, el], i) => {
+    const sig = mapSignature(el.excitation, el.flux, el.spectral_nm || 450);
+    // Spiral layout
+    const angle = pcAngle + (i / entries.length) * Math.PI * 2;
+    const r     = 60 + sig.amplitude * 60;
+    const cx    = W / 2 + r * Math.cos(angle) * (W / 300);
+    const cy    = H / 2 + r * Math.sin(angle) * 0.4;
+    const size  = 3 + sig.t * 8;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, size, 0, Math.PI * 2);
+    ctx.fillStyle = sig.isExcited ? sig.hex : sig.hex.replace('hsl', 'hsla').replace(')', ',0.5)');
+    ctx.fill();
+
+    if (sig.isExcited) {
+      ctx.shadowColor = sig.hex;
+      ctx.shadowBlur  = 12;
+      ctx.fill();
+      ctx.shadowBlur  = 0;
+    }
+
+    // Label top emitters
+    if (sig.t > 0.5) {
+      ctx.fillStyle = '#aaa';
+      ctx.font = '9px monospace';
+      ctx.fillText(el.symbol || name.slice(0, 2).toUpperCase(), cx + size + 2, cy + 3);
+    }
+  });
+}
+
+/* ─── Camera ─────────────────────────────────────────────────────── */
+async function toggleCamera() {
+  const video = document.getElementById('cameraVideo');
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    video.srcObject = null;
+    document.getElementById('btnCamera').textContent = '⬤ Camera';
+    return;
+  }
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = cameraStream;
+    document.getElementById('btnCamera').textContent = '◼ Stop Camera';
+    initWebGL();
+  } catch (e) {
+    alert('Camera access denied: ' + e.message);
+  }
+}
+
+/* ─── WebGL shader pipeline ──────────────────────────────────────── */
+function initWebGL() {
+  const canvas = document.getElementById('cameraCanvas');
+  glCtx = canvas.getContext('webgl2');
+  if (!glCtx) { console.warn('WebGL2 not available — using CPU fallback'); return; }
+
+  // Load GLSL shaders from static files
+  Promise.all([
+    fetch('/static/glsl/shared.vert').then(r => r.text()),
+    fetch('/static/glsl/ogi.frag').then(r => r.text()),
+    fetch('/static/glsl/schlieren.frag').then(r => r.text()),
+  ]).then(([vert, ogiFrag, schlFrag]) => {
+    glPrograms.ogi       = buildShaderProgram(glCtx, vert, ogiFrag);
+    glPrograms.schlieren = buildShaderProgram(glCtx, vert, schlFrag);
+    scheduleGLRender();
+  }).catch(err => console.warn('Shader load failed:', err));
+}
+
+function buildShaderProgram(gl, vertSrc, fragSrc) {
+  const compile = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      console.error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER,   vertSrc));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragSrc));
+  gl.linkProgram(prog);
+  return prog;
+}
+
+function scheduleGLRender() {
+  if (!glCtx) return;
+  const video  = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+
+  const render = () => {
+    if (!cameraStream) { requestAnimationFrame(render); return; }
+    canvas.width  = video.videoWidth  || canvas.offsetWidth;
+    canvas.height = video.videoHeight || canvas.offsetHeight;
+    glCtx.viewport(0, 0, canvas.width, canvas.height);
+
+    const prog = ogiActive       ? glPrograms.ogi
+               : schlierenActive ? glPrograms.schlieren
+               : null;
+
+    if (prog) {
+      renderWithShader(prog);
+    } else {
+      // Passthrough — just draw camera to canvas via 2D
+      const ctx2d = canvas.getContext ? null : null;
+      // WebGL clear
+      glCtx.clearColor(0,0,0,0);
+      glCtx.clear(glCtx.COLOR_BUFFER_BIT);
+    }
+    requestAnimationFrame(render);
+  };
+  requestAnimationFrame(render);
+}
+
+function renderWithShader(prog) {
+  const gl    = glCtx;
+  const video = document.getElementById('cameraVideo');
+  if (!video.videoWidth) return;
+
+  gl.useProgram(prog);
+
+  // Full-screen quad
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const posLoc = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+  // Upload camera frame as texture
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+  const uFrame = gl.getUniformLocation(prog, 'u_frame');
+  if (uFrame) gl.uniform1i(uFrame, 0);
+
+  const uTime  = gl.getUniformLocation(prog, 'u_time');
+  if (uTime) gl.uniform1f(uTime, performance.now() / 1000.0);
+
+  // OGI-specific uniforms
+  const uThresh = gl.getUniformLocation(prog, 'u_threshold');
+  if (uThresh) gl.uniform1f(uThresh, 0.25);
+  const uAlpha  = gl.getUniformLocation(prog, 'u_blend_alpha');
+  if (uAlpha)  gl.uniform1f(uAlpha, 0.55);
+  const uColor  = gl.getUniformLocation(prog, 'u_plume_color');
+  if (uColor)  gl.uniform3f(uColor, 1.0, 0.55, 0.08);  // orange (methane default)
+  const uBlur   = gl.getUniformLocation(prog, 'u_blur_radius');
+  if (uBlur)   gl.uniform1f(uBlur, 8.0);
+  const uSchl   = gl.getUniformLocation(prog, 'u_schlieren');
+  if (uSchl)   gl.uniform1i(uSchl, schlierenActive ? 1 : 0);
+
+  // Schlieren-specific uniforms
+  const uSens   = gl.getUniformLocation(prog, 'u_sensitivity');
+  if (uSens)   gl.uniform1f(uSens, 4.0);
+  const uMode   = gl.getUniformLocation(prog, 'u_mode');
+  if (uMode)   gl.uniform1i(uMode, 2);
+  const uBlend  = gl.getUniformLocation(prog, 'u_blend');
+  if (uBlend)  gl.uniform1f(uBlend, 0.6);
+
+  // Reference frame (for Schlieren BOS)
+  if (referenceFrameData) {
+    const refTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, refTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, referenceFrameData);
+    const uRef = gl.getUniformLocation(prog, 'u_reference');
+    if (uRef) gl.uniform1i(uRef, 1);
+  }
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ─── Calibration (item 3 of integration checklist) ──────────────── */
+function startCalibration() {
+  if (!cameraStream) {
+    alert('Start the camera first, then point it at a blank surface.');
+    return;
+  }
+  const banner = document.getElementById('calibBanner');
+  banner.style.display = 'block';
+  banner.textContent   = '▶ CALIBRATING — hold camera on blank surface… 0%';
+  calibrating  = true;
+  calibFrames  = 0;
+
+  // POST to /api/calibrate every 500 ms for 2 seconds (4 frames)
+  const interval = setInterval(async () => {
+    calibFrames++;
+    const pct = Math.round((calibFrames / 4) * 100);
+    banner.textContent = `▶ CALIBRATING — hold camera on blank surface… ${pct}%`;
+
+    // Capture reference frame for Schlieren BOS
+    const video  = document.getElementById('cameraVideo');
+    const tmpCvs = document.createElement('canvas');
+    tmpCvs.width  = video.videoWidth  || 320;
+    tmpCvs.height = video.videoHeight || 240;
+    const tmpCtx  = tmpCvs.getContext('2d');
+    tmpCtx.drawImage(video, 0, 0);
+    referenceFrameData = tmpCvs;  // store for WebGL u_reference
+
+    if (calibFrames >= 4) {
+      clearInterval(interval);
+      calibrating = false;
+      banner.textContent = '✔ CALIBRATION COMPLETE';
+      setTimeout(() => { banner.style.display = 'none'; }, 2000);
+    }
+  }, 500);
+}
+
+/* ─── OGI / Schlieren toggles ─────────────────────────────────────── */
+function toggleOGI() {
+  ogiActive = !ogiActive;
+  if (ogiActive) schlierenActive = false;
+  document.getElementById('btnOGI').style.borderColor = ogiActive ? '#ff9944' : '';
+  document.getElementById('btnOGI').style.color       = ogiActive ? '#ff9944' : '';
+  if (ogiActive && !cameraStream) toggleCamera();
+}
+
+function toggleSchlieren() {
+  schlierenActive = !schlierenActive;
+  if (schlierenActive) {
+    ogiActive = false;
+    if (!referenceFrameData) {
+      alert('Run Calibration first to capture the Schlieren reference frame.');
+      schlierenActive = false;
+      return;
+    }
+  }
+  document.getElementById('btnSchlieren').style.borderColor = schlierenActive ? '#44aaff' : '';
+  document.getElementById('btnSchlieren').style.color       = schlierenActive ? '#44aaff' : '';
+  if (schlierenActive && !cameraStream) toggleCamera();
+}
+
+/* ─── UV scan ─────────────────────────────────────────────────────── */
+async function triggerScan() {
+  const btn = document.getElementById('btnScan');
+  btn.textContent = '⟳ Scanning…';
+  try {
+    const r    = await fetch(`${API}/api/scan`, { method: 'POST' });
+    const data = await r.json();
+    document.getElementById('scanCount').textContent      = data.scan_count;
+    document.getElementById('scanDetections').textContent = data.detection_count;
+    const detail = document.getElementById('scanDetail');
+    detail.innerHTML = (data.detections || []).map(d =>
+      `<div>${d.label} conf=${d.confidence} @(${d.bounding_box.x},${d.bounding_box.y})</div>`
+    ).join('') || '<span>No detections.</span>';
+  } catch (e) {
+    console.error('Scan error:', e);
+  }
+  btn.textContent = '▶ UV Scan';
+}
+
+/* ─── Fusion (item 4 — Gemma labelling) ─────────────────────────── */
+async function runFusion() {
+  const target = document.getElementById('fusionTarget').value;
+  try {
+    const r    = await fetch(`${API}/api/fusion?target=${encodeURIComponent(target)}&ppm=30`);
+    const data = await r.json();
+    document.getElementById('fCompound').textContent  = data.identified_compound || '—';
+    document.getElementById('fConf').textContent      = data.confidence != null
+      ? (data.confidence * 100).toFixed(1) + '%' : '—';
+    const hEl = document.getElementById('fHazard');
+    hEl.textContent  = (data.hazard_level || 'none').toUpperCase();
+    hEl.className    = 'val hz-' + (data.hazard_level || 'none');
+    document.getElementById('fBackend').textContent   = data.backend_used || '—';
+    document.getElementById('fReasoning').textContent = data.reasoning    || '';
+  } catch (e) {
+    console.error('Fusion error:', e);
+  }
+}
+
+/* ─── Ammonia suite ─────────────────────────────────────────────── */
+async function fetchAmmonia() {
+  const mode = document.getElementById('ammoniaMode').value;
+  try {
+    const r    = await fetch(`${API}/api/ammonia?mode=${mode}&ppm=15`);
+    const data = await r.json();
+    const div  = document.getElementById('ammoniaReadings');
+    const rows = Object.entries(data.readings || {})
+      .map(([k, v]) => `<div class="val-row"><span class="key">${k}</span><span class="val">${v}</span></div>`)
+      .join('');
+    div.innerHTML = rows || '—';
+  } catch (_) {}
+}
+document.getElementById('ammoniaMode').addEventListener('change', fetchAmmonia);
+fetchAmmonia();
+
+/* ─── Startup ────────────────────────────────────────────────────── */
+connectSSE();
+runFusion();
+
+// Point cloud animation loop
+(function pcLoop() {
+  if (Object.keys(elements).length) drawPointCloud(elements);
+  requestAnimationFrame(pcLoop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+/* App.css — imports the shared emissions.css + minor React-specific overrides */
+@import url('/static/css/emissions.css');
+
+/* ── Smooth card transitions for React state updates ── */
+.element-card {
+  will-change: transform, box-shadow, border-color;
+}
+
+/* ── Panel box (used in App.jsx sidebar) ── */
+.panel-box {
+  background:   var(--bg-card, #111118);
+  border:       1px solid var(--border-dim, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  padding:      0.9rem;
+}
+
+.panel-box h3 {
+  font-family:    var(--font-mono, monospace);
+  font-size:      0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color:          var(--text-secondary, #8888a8);
+  margin-bottom:  0.6rem;
+}
+
+/* ── ctrl-select (used in FusionPanel + App) ── */
+.ctrl-select {
+  background:    #111;
+  border:        1px solid rgba(255,255,255,0.15);
+  color:         var(--text-primary, #e8e8f0);
+  font-family:   var(--font-mono, monospace);
+  font-size:     0.72rem;
+  padding:       0.35rem 0.6rem;
+  border-radius: 4px;
+}
+.ctrl-select:focus { outline: none; border-color: #44aaff; }
+
+/* ── Search bar ── */
+#searchBar {
+  background:    #111;
+  border:        1px solid rgba(255,255,255,0.12);
+  color:         var(--text-primary, #e8e8f0);
+  font-family:   var(--font-mono, monospace);
+  font-size:     0.78rem;
+  padding:       0.4rem 0.8rem;
+  border-radius: 4px;
+  width:         200px;
+}
+#searchBar:focus { outline: none; border-color: #44aaff; }
+
+/* ── Buttons ── */
+.btn {
+  font-family:    var(--font-mono, monospace);
+  font-size:      0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding:        0.4rem 1rem;
+  border-radius:  4px;
+  cursor:         pointer;
+  border:         1px solid;
+  background:     transparent;
+  transition:     all 0.2s ease;
+}
+.btn-green  { border-color:#44ff88; color:#44ff88; }
+.btn-green:hover  { background:rgba(68,255,136,0.12); }
+.btn-blue   { border-color:#44aaff; color:#44aaff; }
+.btn-blue:hover   { background:rgba(68,170,255,0.12); }
+.btn-orange { border-color:#ff9944; color:#ff9944; }
+.btn-orange:hover { background:rgba(255,153,68,0.12); }
+.btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* ── Responsive: single column on mobile ── */
+@media (max-width: 880px) {
+  .dashboard > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
