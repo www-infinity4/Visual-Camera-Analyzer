@@ -41,16 +41,11 @@ jobs:
       - name: Prepare GitHub Pages root
         run: |
           mkdir -p _site
-          # Copy the main dashboard HTML to the root index
-          cp templates/dashboard.html _site/index.html
-          # Rewrite absolute /static/ paths to be relative for GitHub Pages
-          sed -i \
-            -e 's|href="/static/|href="static/|g' \
-            -e 's|src="/static/|src="static/|g' \
-            -e 's|url("/static/|url("static/|g' \
-            _site/index.html
-          # Copy all static assets (CSS, JS, GLSL, built React bundle)
-          cp -r static _site/static
+          # Serve the built Vite app from the GitHub Pages root.
+          cp -r static/dist/. _site/
+          # Keep Flask static resources available at /static/*.
+          mkdir -p _site/static
+          rsync -a --exclude='dist' static/ _site/static/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
