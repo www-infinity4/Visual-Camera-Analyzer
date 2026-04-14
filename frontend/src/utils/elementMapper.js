@@ -9,7 +9,7 @@
  */
 
 /**
- * @param {number} thermal    Raw /sys/class/thermal/thermal_zone*/temp (mC)
+ * @param {number} thermal    Raw /sys/class/thermal/thermal_zoneX/temp value (mC)
  * @param {number} flux       Raw /sys/class/power_supply/battery/current_now (µA)
  * @param {string} [rfType]   RF signature type
  * @param {number} [spectralNm] Primary spectral line (nm)

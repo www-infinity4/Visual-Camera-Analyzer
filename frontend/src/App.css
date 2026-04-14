@@ -1,5 +1,5 @@
 /* App.css — imports the shared emissions.css + minor React-specific overrides */
-@import url('/static/css/emissions.css');
+@import url('../../static/css/emissions.css');
 
 /* ── Smooth card transitions for React state updates ── */
 .element-card {
