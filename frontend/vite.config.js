@@ -23,6 +23,7 @@ import react from '@vitejs/plugin-react';
  */
 export default defineConfig({
   plugins: [react()],
+  base: './',
 
   // Proxy API calls to the Flask element_server.py
   server: {
